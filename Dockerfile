@@ -1,0 +1,130 @@
+FROM nvidia/cuda:12.1.1-base-ubuntu22.04
+
+RUN echo 'root:root' | chpasswd
+#############################################################################
+# Requirements
+#############################################################################
+
+RUN \
+  apt-get update -y && \
+  apt-get install software-properties-common -y && \
+  apt-get update -y && \
+  apt-get install -y openjdk-8-jdk \
+                git \
+                build-essential \
+				subversion \
+				perl \
+				curl \
+				unzip \
+				cpanminus \
+				make \
+				nano python3-pip python3 screen htop maven psmisc ant
+
+# Java version
+ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64
+
+# Timezone
+ENV TZ=America/Los_Angeles
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+RUN apt-get update
+RUN apt-get install -y openssh-server
+RUN service ssh start
+EXPOSE 22
+#############################################################################
+# Setup Defects4J
+#############################################################################
+
+# ----------- Step 1. Clone defects4j from github --------------
+WORKDIR /
+RUN git clone https://github.com/rjust/defects4j.git defects4j
+
+# ----------- Step 2. Initialize Defects4J ---------------------
+WORKDIR /defects4j
+RUN git checkout v1.2.0
+RUN cpanm --installdeps .
+RUN ./init.sh
+RUN sed -i 's|<include name="org/jfree/\*\*"/>|<!-- <include name="org/jfree/\*\*"/> -->|g' /defects4j/framework/projects/Chart/Chart.build.xml
+
+# ----------- Step 3. Add Defects4J's executables to PATH: ------
+ENV PATH="/defects4j/framework/bin:${PATH}"  
+#--------------
+
+# Activate openssh server
+RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/g' /etc/ssh/sshd_config
+RUN sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/g' /root/.bashrc
+
+# Clone and setup Gresino
+WORKDIR /root
+# COPY . /root/Gresino
+RUN git clone https://github.com/Gresino/Gresino.git
+WORKDIR /root/Gresino/Avatar
+RUN ./compile.sh
+WORKDIR /root/Gresino/Fixminer 
+RUN ./compile.sh
+WORKDIR /root/Gresino/kPar
+RUN ./compile.sh
+WORKDIR /root/Gresino/TBar
+RUN ./compile.sh
+
+WORKDIR /root/Gresino/experiments/alpharepair
+RUN mkdir result
+RUN mkdir result/cache
+WORKDIR /root/Gresino/experiments/avatar
+RUN mkdir result
+RUN mkdir result/cache
+WORKDIR /root/Gresino/experiments/fixminer
+RUN mkdir result
+RUN mkdir result/cache
+WORKDIR /root/Gresino/experiments/kpar
+RUN mkdir result
+RUN mkdir result/cache
+WORKDIR /root/Gresino/experiments/recoder
+RUN mkdir result
+RUN mkdir result/cache
+WORKDIR /root/Gresino/experiments/tbar
+RUN mkdir result
+RUN mkdir result/cache
+WORKDIR /root/Gresino/experiments/srepair
+RUN mkdir result
+RUN mkdir result/cache
+
+WORKDIR /root/Gresino/SimAPR
+RUN python3 -m pip install -r requirements.txt
+
+WORKDIR /root
+RUN update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
+
+# Install learning-based tools
+RUN wget https://repo.anaconda.com/archive/Anaconda3-2022.10-Linux-x86_64.sh
+RUN chmod 751 Anaconda3-2022.10-Linux-x86_64.sh
+RUN ./Anaconda3-2022.10-Linux-x86_64.sh -b
+ENV PATH="/root/anaconda3/bin:${PATH}"
+RUN echo 'export PATH=/defects4j/framework/bin:/root/anaconda3/bin:$PATH' > /root/.bash_aliases
+RUN conda init bash
+
+WORKDIR /root/Gresino/AlphaRepair
+RUN conda env create -f data/env.yaml
+WORKDIR /root/Gresino/Recoder
+RUN conda env create -f data/env.yaml
+RUN wget https://www.dropbox.com/s/hu3lwdybaeoygzk/best_model.ckpt
+RUN mkdir checkpointSearch
+RUN mv best_model.ckpt checkpointSearch
+WORKDIR /root/Gresino/SelfAPR
+RUN conda env create -f env.yaml
+
+WORKDIR /root/Gresino/SRepair
+RUN ./compile.sh
+
+# Install DiffTGen and ODS
+WORKDIR /root/Gresino/DiffTGen
+RUN ./compile.sh
+RUN python3 -m pip install xgboost scikit-learn imblearn matplotlib
+
+WORKDIR /root
+RUN mkdir .config; exit 0
+RUN mkdir .config/matplotlib; exit 0
+RUN echo "ps.fonttype:  42\npdf.fonttype: 42" > .config/matplotlib/matplotlibrc
+
+WORKDIR /root
+CMD ["/usr/sbin/sshd","-D"]
