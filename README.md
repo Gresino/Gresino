@@ -52,6 +52,9 @@ More details are available in [Gresino](./Gresino/README.md).
 To run Gresino via Docker, install 
 - [docker](https://www.docker.com/)
 
+## How to add a new APR tool
+To add a new APR tool, it should store two kind of files: patch candidates and meta-information about them.
+
 Plus, you should install the following to utilize GPU for learning-based tools.
 - [NVIDIA driver](https://www.nvidia.com/download/index.aspx)
 - [nvidia-docker](https://github.com/NVIDIA/nvidia-docker)
